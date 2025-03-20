@@ -262,15 +262,15 @@ function formatStatisticsForDisplay(stats) {
     statsText += `*Upsets*: ${stats.upsets} so far\n`;
   }
   
-  statsText += `*Average Points*: ${stats.avgPointsPerGame} points per game\n\n`;
+  statsText += `*Average Points Per Game*: ${stats.avgPointsPerGame}\n\n`;
   
   // Top scoring teams
   if (stats.topScoringTeams && stats.topScoringTeams.length > 0) {
-    statsText += `*Top Scoring Teams (Avg)*:\n`;
+    statsText += `*Top Scoring Teams*:\n`;
     stats.topScoringTeams.forEach((team, index) => {
-      statsText += `${index + 1}. ${team.team}: ${team.avgPoints} ppg\n`;
+      statsText += `${index + 1}. ${team.team} - ${team.avgPoints} ppg\n`;
     });
-    statsText += `\n`;
+    statsText += '\n';
   }
   
   // Closest games
@@ -289,48 +289,64 @@ function formatStatisticsForDisplay(stats) {
  * @param {Object} web Slack WebClient instance
  * @param {string} canvasId Canvas ID to update
  * @param {Object} data Tournament data
- * @returns {Promise<Object>} Updated Canvas details
+ * @returns {Promise<Object>} Update result
  */
 async function updateCanvasContent(web, canvasId, data) {
   try {
+    // Prepare section content based on data
+    let gamesInProgressContent = 'No games in progress.';
+    let completedGamesContent = 'No completed games.';
+    let upcomingGamesContent = 'No upcoming games.';
+    let statisticsContent = 'Statistics not available.';
+    let lastUpdatedText = `Last updated: ${new Date().toLocaleString()}`;
+    
     // Format games in progress
-    let currentGamesText = data.currentGames && data.currentGames.length > 0
-      ? data.currentGames.map(game => formatGameForDisplay(game)).join('\n\n')
-      : 'No games currently in progress.';
+    if (data.currentGames && data.currentGames.length > 0) {
+      gamesInProgressContent = data.currentGames
+        .map(game => formatGameForDisplay(game, true))
+        .join('\n\n');
+      
+      // Add any close games indicators
+      if (data.closeGames && data.closeGames.length > 0) {
+        const closeGameIds = data.closeGames.map(g => g.GameID);
+        gamesInProgressContent = data.currentGames
+          .map(game => {
+            const isClose = closeGameIds.includes(game.GameID);
+            return formatGameForDisplay(game, true) + (isClose ? ' 🔥 CLOSE GAME!' : '');
+          })
+          .join('\n\n');
+      }
+    }
     
-    // Format completed games (show most recent 5)
-    const recentCompletedGames = data.completedGames 
-      ? [...data.completedGames].sort((a, b) => new Date(b.DateTime) - new Date(a.DateTime)).slice(0, 5)
-      : [];
+    // Format completed games (most recent first)
+    if (data.completedGames && data.completedGames.length > 0) {
+      const recentCompletedGames = [...data.completedGames]
+        .sort((a, b) => new Date(b.DateTime) - new Date(a.DateTime))
+        .slice(0, 10); // Show last 10 completed games
+      
+      completedGamesContent = recentCompletedGames
+        .map(game => formatGameForDisplay(game))
+        .join('\n\n');
+    }
     
-    let completedGamesText = recentCompletedGames.length > 0
-      ? recentCompletedGames.map(game => formatGameForDisplay(game)).join('\n\n')
-      : 'No completed games yet.';
-    
-    // Format upcoming games (show next 5)
-    const upcomingGames = data.upcomingGames 
-      ? [...data.upcomingGames].sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime)).slice(0, 5)
-      : [];
-    
-    let upcomingGamesText = upcomingGames.length > 0
-      ? upcomingGames.map(game => formatGameForDisplay(game)).join('\n\n')
-      : 'No upcoming games scheduled.';
+    // Format upcoming games (soonest first)
+    if (data.upcomingGames && data.upcomingGames.length > 0) {
+      const nextUpcomingGames = [...data.upcomingGames]
+        .sort((a, b) => new Date(a.DateTime) - new Date(b.DateTime))
+        .slice(0, 10); // Show next 10 upcoming games
+      
+      upcomingGamesContent = nextUpcomingGames
+        .map(game => formatGameForDisplay(game))
+        .join('\n\n');
+    }
     
     // Format statistics
-    let statsText = data.stats 
-      ? formatStatisticsForDisplay(data.stats)
-      : 'Statistics not available yet.';
+    if (data.stats) {
+      statisticsContent = formatStatisticsForDisplay(data.stats);
+    }
     
-    // Format last updated timestamp
-    const lastUpdated = data.lastUpdated 
-      ? new Date(data.lastUpdated).toLocaleString('en-US', { 
-          dateStyle: 'medium', 
-          timeStyle: 'medium'
-        })
-      : 'Unknown';
-    
-    // Prepare Canvas blocks for update
-    const updatedBlocks = [
+    // Update the Canvas with all sections
+    const blocks = [
       {
         "type": "header",
         "text": {
@@ -355,7 +371,7 @@ async function updateCanvasContent(web, canvasId, data) {
         "type": "section",
         "text": {
           "type": "mrkdwn",
-          "text": currentGamesText
+          "text": gamesInProgressContent
         }
       },
       {
@@ -374,7 +390,7 @@ async function updateCanvasContent(web, canvasId, data) {
         "type": "section",
         "text": {
           "type": "mrkdwn",
-          "text": completedGamesText
+          "text": completedGamesContent
         }
       },
       {
@@ -393,7 +409,7 @@ async function updateCanvasContent(web, canvasId, data) {
         "type": "section",
         "text": {
           "type": "mrkdwn",
-          "text": upcomingGamesText
+          "text": upcomingGamesContent
         }
       },
       {
@@ -412,7 +428,7 @@ async function updateCanvasContent(web, canvasId, data) {
         "type": "section",
         "text": {
           "type": "mrkdwn",
-          "text": statsText
+          "text": statisticsContent
         }
       },
       {
@@ -424,35 +440,16 @@ async function updateCanvasContent(web, canvasId, data) {
         "elements": [
           {
             "type": "mrkdwn",
-            "text": `Last updated: ${lastUpdated}`
+            "text": lastUpdatedText
           }
         ]
       }
     ];
     
-    // Add specific blocks for special situations
-    
-    // Close games alert
-    if (data.closeGames && data.closeGames.length > 0) {
-      // Insert after the main header
-      updatedBlocks.splice(2, 0, 
-        {
-          "type": "section",
-          "text": {
-            "type": "mrkdwn",
-            "text": `🔥 *CLOSE GAME ALERT* 🔥\n${data.closeGames.map(game => formatGameForDisplay(game)).join('\n\n')}`
-          }
-        },
-        {
-          "type": "divider"
-        }
-      );
-    }
-    
-    // Update the Canvas with the new content
+    // Update the Canvas
     const result = await web.canvas.update({
       canvas_id: canvasId,
-      blocks: updatedBlocks
+      blocks: blocks
     });
     
     return result;
