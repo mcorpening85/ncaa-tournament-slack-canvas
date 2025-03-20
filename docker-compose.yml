@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  ncaa-canvas:
+    build: .
+    container_name: ncaa-tournament-canvas
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
